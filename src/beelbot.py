@@ -13,3 +13,5 @@ with open('config.txt', 'r') as f:
 @bot.event 
 async def on_ready():
     print('Beel is online.')
+
+bot.run(botToken)
