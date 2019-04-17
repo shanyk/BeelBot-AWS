@@ -101,8 +101,6 @@ async def medalsKL(ctx, medals, kl = -1):
         MessageBody = body
     )
 
-    await ctx.send(response)
-
 @bot.command()
 async def recordSR(ctx, mpm, runTime = -1, stage = -1):
 
@@ -125,8 +123,6 @@ async def recordSR(ctx, mpm, runTime = -1, stage = -1):
         QueueUrl = queue_url,
         MessageBody = body
     )
-
-    await ctx.send(response)
     
 
 # start the bot
