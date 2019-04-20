@@ -19,13 +19,11 @@ def lambda_handler(event, context):
     bodyDict = json.loads(body)
     print(type(bodyDict))
 
-    put_medals(ddb, bodyDict)
+    put_medals(ddb, bodyDict, webhook)
 
     data = {
         "content": body
     }
-
-    requests.post(webhook, data)
     
     return {
         'statusCode': 200,
@@ -40,15 +38,15 @@ def lambda_handler(event, context):
 
     data needs to be converted to strings because dynamodb says so
 '''
-def put_medals(ddb, data):
+def put_medals(ddb, data, webhook):
 
     # pull out medals data for slicing purposes
     medal = data['medals']
 
-    # building the item (refer to boto3 documentation)
+    # building the new item (refer to boto3 documentation)
     item = {            
         'id': {
-            'N': str(data['id']) + str(data['time'])        # partition key is id + timestamp
+            'N': str(data['id'])      # partition key is id + timestamp
             },
         'timestamp': {
             'N': str(data['time'])
@@ -72,13 +70,89 @@ def put_medals(ddb, data):
             'N': str(data['kl'])
             }
     }
+    
+    # query the last medals entry
+    last_medals_entry = ddb.query(
+        TableName = 'beelbot',
+        Limit = 1,
+        ScanIndexForward = False,
+        ExpressionAttributeValues = {
+            ':id': {'N' :str(data['id'])}
+        },
+        KeyConditionExpression = 'id = :id',
+        ProjectionExpression = 'medals_num, medals_char_num'
+    )
+    
+    # last kl variable for scope
+    last_kl = None
+    last_medals = None
 
-    # place item in beelbot database
-    response = ddb.put_item(
+    # if there is no previous medals entry then there are no returned items
+    if not last_medals_entry['Items']:
+        pass 
+    else:
+        # get the last medals
+        last_medals = last_medals_entry['Items'][0]
+        # query the last kl entry
+        last_kl_entry = ddb.query(
+            TableName = 'beelbot',
+            Limit = 1,
+            ScanIndexForward = False,
+            ExpressionAttributeValues = {
+                ':id': {'N': str(data['id'])},
+                ':noKL': {'N': str(-1)}
+            },
+            KeyConditionExpression = 'id = :id',
+            FilterExpression = 'kl > :noKL',
+            ProjectionExpression = 'kl'
+        )
+        
+        # if there is no previous entry by the id then ScannedCount == 0
+        # skip querying for kl if there is no preivous entry
+        if last_kl_entry['ScannedCount'] == 0:
+            pass   
+        else:
+            # get the last evaluated key for use just in case no kl was returned
+            last_evaluated_key = last_kl_entry['LastEvaluatedKey']
+            
+            while not last_kl_entry['Items']:
+                print(last_evaluated_key)
+                last_kl_entry = ddb.query(
+                    TableName = 'beelbot',
+                    Limit = 1,
+                    ScanIndexForward = False,
+                    ExpressionAttributeValues = {
+                        ':id': {'N': str(data['id'])},
+                        ':noKL': {'N': str(-1)}
+                    },
+                    KeyConditionExpression = 'id = :id',
+                    FilterExpression = 'kl > :noKL',
+                    ProjectionExpression = 'kl',
+                    ExclusiveStartKey = last_evaluated_key
+                )
+                
+                # if there are no more entries to check break the loop
+                if last_kl_entry['ScannedCount'] == 0:
+                    break
+                else:   # set new last evaluated key
+                    last_evaluated_key = last_kl_entry['LastEvaluatedKey']
+            
+            # get the last kl if it exists
+            if last_kl_entry['Items']:
+                last_kl = last_kl_entry['Items'][0]['kl']['N']
+            else:
+                pass
+
+    # place the new item in beelbot database
+    put_response = ddb.put_item(
         Item = item,
         TableName = 'beelbot'
     )
-
-    print('PutItem Successful')
-
-
+    
+    print(last_medals)
+    print(last_kl)
+    
+    if not last_medals_entry['Items']:
+        requests.post(webhook, {'content': 'Your first medals record has been made!'})
+    else:
+        requests.post(webhook, {'content': last_medals})
