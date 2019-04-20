@@ -14,12 +14,16 @@ def lambda_handler(event, context):
 
     print(webhook)
     
+    print(event)
     body = event['Records'][0]['body']
     print(body)
     bodyDict = json.loads(body)
     print(type(bodyDict))
 
+    # medals = get_medals(ddb, bodyDict['id'], bodyDict['cmd'])
     put_medals(ddb, bodyDict, webhook)
+    
+    # print(medals)
 
     data = {
         "content": body
@@ -68,31 +72,21 @@ def put_medals(ddb, data, webhook):
             },                              # will be used for table sorting
         'kl': {
             'N': str(data['kl'])
-            }
+            },
+        'cmd': {
+            'S': data['cmd']                # command used to filter results later
+        }
     }
     
-    # query the last medals entry
-    last_medals_entry = ddb.query(
-        TableName = 'beelbot',
-        Limit = 1,
-        ScanIndexForward = False,
-        ExpressionAttributeValues = {
-            ':id': {'N' :str(data['id'])}
-        },
-        KeyConditionExpression = 'id = :id',
-        ProjectionExpression = 'medals_num, medals_char_num'
-    )
     
     # last kl variable for scope
     last_kl = None
-    last_medals = None
+    last_medals = get_medals(ddb, data['id'], data['cmd'])
 
     # if there is no previous medals entry then there are no returned items
-    if not last_medals_entry['Items']:
+    if last_medals == None:
         pass 
     else:
-        # get the last medals
-        last_medals = last_medals_entry['Items'][0]
         # query the last kl entry
         last_kl_entry = ddb.query(
             TableName = 'beelbot',
@@ -152,7 +146,48 @@ def put_medals(ddb, data, webhook):
     print(last_medals)
     print(last_kl)
     
-    if not last_medals_entry['Items']:
+    if last_medals == None:
         requests.post(webhook, {'content': 'Your first medals record has been made!'})
     else:
         requests.post(webhook, {'content': last_medals})
+
+'''
+    gets the most recent medal data from the database
+
+    returns tuple of floats (medals_prefix_number, medals_character_number) if there is data
+    returns None if there is no medals data
+'''
+def get_medals(ddb, id, cmd):
+
+    # variable to be returned
+    last_medals = None
+
+    # query to the database for medals prefix number and char code
+    recent_medals_entries = ddb.query(
+        TableName = 'beelbot',
+        ScanIndexForward = False,   # sort query by timestamp descending, most recent on top
+        ExpressionAttributeValues = {
+            ':id': {'N': str(id)},
+            ':cmd': {'S': cmd}
+        },
+        KeyConditionExpression = 'id = :id',
+        FilterExpression = 'cmd = :cmd',
+        ProjectionExpression = 'medals_num, medals_char_num'
+    )
+
+    # if no items are returned from the query then there is no medals
+    # data on record, return None
+    # else proceed with extracting medals data
+    if not recent_medals_entries['Items']:
+        return last_medals
+    else:
+        most_recent_entry = recent_medals_entries['Items'][0]   # most recent entry at 0 position
+
+        medals_prefix_num = most_recent_entry['medals_num']['N']
+        medals_char_num = most_recent_entry['medals_char_num']['N']
+
+        return (float(medals_prefix_num), float(medals_char_num))
+
+
+
+
