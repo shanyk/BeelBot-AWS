@@ -20,11 +20,12 @@ def lambda_handler(event, context):
     bodyDict = json.loads(body)
     print(type(bodyDict))
 
-    # medals = get_medals(ddb, bodyDict['id'], bodyDict['cmd'])
-    put_medals(ddb, bodyDict, webhook)
+    medals = get_medals(ddb, bodyDict['id'], bodyDict['cmd'])
+    #put_medals(ddb, bodyDict, webhook)
     #kl = get_kl(ddb, bodyDict['id'], bodyDict['cmd'])
+    change = calc_progress(medals, bodyDict['medals'])
     
-    #print(kl)
+    print(change)
 
     data = {
         "content": body
@@ -170,5 +171,52 @@ def get_kl(ddb, id, cmd):
         return int(most_recent_kl_entry['kl']['N'])
 
 
+############################################################################
+'''
+    calculates the difference between new medals and old medals or new mpm and old mpm
+
+    old = tuple(float, float)
+    new = string of form ###.#S
+
+    returns tuple (string of rep of increase, string rep of % change)
+'''
+def calc_progress(old, new):
+
+    # unpack old data
+    old_prefix, old_char_ascii = old
+    old_char = chr(old_char_ascii)
+
+    # unpack new data
+    new_prefix = float(new[:-1])
+    new_char_ascii = ord(new[-1:])
+    new_char = new[-1:]
+
+    # multiplier for use because the next letter represents a magnitude of 1000
+    multiplier = (new_char_ascii  - old_char_ascii) * 1000
+
+    # calculate the difference
+    gain = None
+
+    if multiplier == 0:
+        gain = new_prefix - old_prefix
+    else: 
+        gain = (new_prefix * multiplier) - old_prefix
+
+    # calculate the percent change
+    gain_percent = (gain/old_prefix) * 100
+
+    # building the string representations 
+    gain_percent_str = f'{gain_percent:.2f}%'
+    gain_str = ""
+
+    if gain >= 1000:
+        gain_str = f'{gain/1000:.1f}{new_char}'
+    elif gain >= 0:
+        gain_str = f'{gain:.1f}{old_char}'
+    else:
+        gain_str = "Negative change. Please check your data."
+
+    return (gain_str, gain_percent_str)
+    
 
 
