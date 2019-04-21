@@ -20,21 +20,68 @@ def lambda_handler(event, context):
     bodyDict = json.loads(body)
     print(type(bodyDict))
 
-    medals = get_medals(ddb, bodyDict['id'], bodyDict['cmd'])
     #put_medals(ddb, bodyDict, webhook)
     #kl = get_kl(ddb, bodyDict['id'], bodyDict['cmd'])
-    change = calc_progress(medals, bodyDict['medals'])
     
-    print(change)
+    message = None
 
-    data = {
-        "content": body
-    }
+    if bodyDict['cmd'] == 'medalsKL':
+        message = medalsKL(ddb, bodyDict)
     
+    requests.post(webhook, message)
+
     return {
         'statusCode': 200,
         'body': json.dumps('Hello from Lambda!')
     }
+##########################################################################
+'''
+    message builder for the medalsKL command
+    
+    returns an object for a discord message
+'''
+def medalsKL(ddb, data):
+    
+    user_id = data['id']
+    cmd = data['cmd']
+    new_medals = data['medals']
+    old_medals = get_medals(ddb, user_id, cmd)
+    new_kl = data['kl']
+    old_kl = get_kl(ddb, user_id, cmd)
+
+    medals_content = None
+
+    if old_medals == None:
+        put_medals(ddb, data)
+        medals_content = 'Your first entry has been made!'
+    else:
+        change = calc_progress(old_medals, new_medals)
+
+        if change[0] == None:
+            medals_content = 'Change was negative. Please check your data.'
+        else:
+            put_medals(ddb, data)
+            
+            info_str = f'{change[0]}, {change[1]}'
+
+            medals_content = info_str
+    
+    kl_content = None
+    
+    if new_kl != -1 and old_kl != None:
+        kl_content = new_kl - old_kl
+    elif new_kl != -1 and old_kl == None:
+        kl_content = 'New KL has been recorded'
+    else:
+        kl_content = 'No change in KL.'
+    
+    message_str = f'{medals_content}, {kl_content}'
+    
+    message = {
+        'content': message_str
+    }
+    
+    return message
 
 ##########################################################################
 '''
@@ -45,7 +92,7 @@ def lambda_handler(event, context):
 
     data needs to be converted to strings because dynamodb says so
 '''
-def put_medals(ddb, data, webhook):
+def put_medals(ddb, data):
 
     # pull out medals data for slicing purposes
     medal = data['medals']
@@ -80,25 +127,14 @@ def put_medals(ddb, data, webhook):
             'S': data['cmd']                # command used to filter results later
         }
     }
-    
-    
-    # last kl variable for scope
-    last_kl = get_kl(ddb, data['id'], data['cmd'])
-    last_medals = get_medals(ddb, data['id'], data['cmd'])
 
     # place the new item in beelbot database
     put_response = ddb.put_item(
         Item = item,
         TableName = 'beelbot'
     )
-    
-    print(last_medals)
-    print(last_kl)
-    
-    if last_medals == None:
-        requests.post(webhook, {'content': 'Your first medals record has been made!'})
-    else:
-        requests.post(webhook, {'content': last_kl})
+
+    print(put_response)
 
 
 ##########################################################################
@@ -134,7 +170,7 @@ def get_medals(ddb, id, cmd):
         medals_prefix_num = most_recent_entry['medals_num']['N']
         medals_char_num = most_recent_entry['medals_char_num']['N']
 
-        return (float(medals_prefix_num), float(medals_char_num))
+        return (float(medals_prefix_num), int(medals_char_num))
 
 
 ############################################################################
@@ -214,7 +250,7 @@ def calc_progress(old, new):
     elif gain >= 0:
         gain_str = f'{gain:.1f}{old_char}'
     else:
-        gain_str = "Negative change. Please check your data."
+        gain_str = None
 
     return (gain_str, gain_percent_str)
     
