@@ -22,8 +22,9 @@ def lambda_handler(event, context):
 
     # medals = get_medals(ddb, bodyDict['id'], bodyDict['cmd'])
     put_medals(ddb, bodyDict, webhook)
+    #kl = get_kl(ddb, bodyDict['id'], bodyDict['cmd'])
     
-    # print(medals)
+    #print(kl)
 
     data = {
         "content": body
@@ -34,6 +35,7 @@ def lambda_handler(event, context):
         'body': json.dumps('Hello from Lambda!')
     }
 
+##########################################################################
 '''
     input an entry about medals and KL in to db
 
@@ -80,62 +82,8 @@ def put_medals(ddb, data, webhook):
     
     
     # last kl variable for scope
-    last_kl = None
+    last_kl = get_kl(ddb, data['id'], data['cmd'])
     last_medals = get_medals(ddb, data['id'], data['cmd'])
-
-    # if there is no previous medals entry then there are no returned items
-    if last_medals == None:
-        pass 
-    else:
-        # query the last kl entry
-        last_kl_entry = ddb.query(
-            TableName = 'beelbot',
-            Limit = 1,
-            ScanIndexForward = False,
-            ExpressionAttributeValues = {
-                ':id': {'N': str(data['id'])},
-                ':noKL': {'N': str(-1)}
-            },
-            KeyConditionExpression = 'id = :id',
-            FilterExpression = 'kl > :noKL',
-            ProjectionExpression = 'kl'
-        )
-        
-        # if there is no previous entry by the id then ScannedCount == 0
-        # skip querying for kl if there is no preivous entry
-        if last_kl_entry['ScannedCount'] == 0:
-            pass   
-        else:
-            # get the last evaluated key for use just in case no kl was returned
-            last_evaluated_key = last_kl_entry['LastEvaluatedKey']
-            
-            while not last_kl_entry['Items']:
-                print(last_evaluated_key)
-                last_kl_entry = ddb.query(
-                    TableName = 'beelbot',
-                    Limit = 1,
-                    ScanIndexForward = False,
-                    ExpressionAttributeValues = {
-                        ':id': {'N': str(data['id'])},
-                        ':noKL': {'N': str(-1)}
-                    },
-                    KeyConditionExpression = 'id = :id',
-                    FilterExpression = 'kl > :noKL',
-                    ProjectionExpression = 'kl',
-                    ExclusiveStartKey = last_evaluated_key
-                )
-                
-                # if there are no more entries to check break the loop
-                if last_kl_entry['ScannedCount'] == 0:
-                    break
-                else:   # set new last evaluated key
-                    last_evaluated_key = last_kl_entry['LastEvaluatedKey']
-            
-            # get the last kl if it exists
-            if last_kl_entry['Items']:
-                last_kl = last_kl_entry['Items'][0]['kl']['N']
-            else:
-                pass
 
     # place the new item in beelbot database
     put_response = ddb.put_item(
@@ -149,8 +97,10 @@ def put_medals(ddb, data, webhook):
     if last_medals == None:
         requests.post(webhook, {'content': 'Your first medals record has been made!'})
     else:
-        requests.post(webhook, {'content': last_medals})
+        requests.post(webhook, {'content': last_kl})
 
+
+##########################################################################
 '''
     gets the most recent medal data from the database
 
@@ -158,9 +108,6 @@ def put_medals(ddb, data, webhook):
     returns None if there is no medals data
 '''
 def get_medals(ddb, id, cmd):
-
-    # variable to be returned
-    last_medals = None
 
     # query to the database for medals prefix number and char code
     recent_medals_entries = ddb.query(
@@ -179,7 +126,7 @@ def get_medals(ddb, id, cmd):
     # data on record, return None
     # else proceed with extracting medals data
     if not recent_medals_entries['Items']:
-        return last_medals
+        return None
     else:
         most_recent_entry = recent_medals_entries['Items'][0]   # most recent entry at 0 position
 
@@ -187,6 +134,40 @@ def get_medals(ddb, id, cmd):
         medals_char_num = most_recent_entry['medals_char_num']['N']
 
         return (float(medals_prefix_num), float(medals_char_num))
+
+
+############################################################################
+'''
+    gets the most recent kl data from the database
+
+    returns an int of the kl if data exists
+    returns None is no data exists
+'''
+def get_kl(ddb, id, cmd):
+
+    # query to database for valid kl info
+    recent_kl_entries = ddb.query(
+        TableName = 'beelbot',
+        ScanIndexForward = False,
+        ExpressionAttributeValues = {
+            ':id': {'N': str(id)},
+            ':cmd': {'S': cmd},
+            ':valid': {'N': str(-1)} 
+        },
+        KeyConditionExpression = 'id = :id',
+        FilterExpression = 'cmd = :cmd AND kl <> :valid',
+        ProjectionExpression = 'kl'
+    )
+
+    # if no items are returned then there is no kl data
+    # return None
+    # else return the kl data
+    if not recent_kl_entries['Items']:
+        return None
+    else:
+        most_recent_kl_entry = recent_kl_entries['Items'][0]    # most recent entry with kl
+
+        return int(most_recent_kl_entry['kl']['N'])
 
 
 
